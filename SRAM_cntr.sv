@@ -1,5 +1,5 @@
 //Main inputs to the system clk and reset
-module sram #( parameter ADDR_WIDTH = 8,
+module sram #( parameter ADDR_WIDTH = 8,      //top-level
               parameter DATA_WIDTH = 8,
               parameter MEM_SIZE = 1<<ADDR_WIDTH );
   (  input logic  clk, 
