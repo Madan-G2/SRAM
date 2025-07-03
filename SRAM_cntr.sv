@@ -11,5 +11,9 @@ module sram #( parameter ADDR_WIDTH = 8,      //top-level
    input logic [DATA_WIDTH -1] = data_in,      //input 
    output logic [DATA_WIDTH -1] = data_out //output from the SRAM
   );
-
+  typdef enum logic [2:0] {
+    IDLE = 3'b001,
+    WRITE = 3'b010,
+    READ = 3'b100 }state;
   
+endmodule
