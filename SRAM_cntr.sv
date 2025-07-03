@@ -15,5 +15,6 @@ module sram #( parameter ADDR_WIDTH = 8,      //top-level
     IDLE = 3'b001,
     WRITE = 3'b010,
     READ = 3'b100 }state;
+  state current_state,next_state;
   
 endmodule
