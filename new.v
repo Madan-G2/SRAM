@@ -32,7 +32,7 @@ module sram #(
         end
     end
 
-    // Next state logic
+    // Next state logic //// this states  
     always @(*) begin
         next_state = current_state;
         case (current_state)
@@ -54,7 +54,7 @@ module sram #(
         endcase
     end
 
-    // State register
+    // State register // this states
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n)
             current_state <= IDLE;
