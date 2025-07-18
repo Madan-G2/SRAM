@@ -1,0 +1,16 @@
+    Verification plan :
+
+
+Value ranges :
+
+1. The memory size id 256 bytes , each entry size is 8 bits.
+2. The Minimum memory address is 0 [ 8’h00] and 255 [8’hff].
+3. Generate the address  randomly within the range 0 to 255.
+4. Any address >= 256 is invalid. 
+5. The data value it can accept is : Minimum = 8’b0000_0000 [8’h0] and Maximum = 8’b1111_1111 [8’hff].
+
+Operation of the controller :
+
+1. chip_enable =0 ; write_enable =0 ; read_enable =1 ; address — valid address ========WRITE state.
+2. chip_enable =0; write_enable = 1; read_enable = 0; address  — valid address ========READ state .
+3. chip_enable =1 ; —— assert reset_n ‎ = 0 ; ========= IDLE state.
