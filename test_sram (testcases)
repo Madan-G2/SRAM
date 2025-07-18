@@ -1,0 +1,270 @@
+module sram_tb;
+    // Parameters matching the DUT
+    parameter ADDR_WIDTH = 8;
+    parameter DATA_WIDTH = 8;
+    parameter MEM_SIZE = 1<<ADDR_WIDTH;
+    parameter CLK_PERIOD = 10;
+
+    // Testbench signals
+    logic clk;
+    logic reset_n;
+    logic chip_enable_n;
+    logic write_enable_n;
+    logic read_enable_n;
+    logic [ADDR_WIDTH-1:0] address;
+    logic [DATA_WIDTH-1:0] data_in;
+    logic [DATA_WIDTH-1:0] data_out;
+
+    // Instantiate the DUT (Verilog-2001 module)
+    sram #(
+        .ADDR_WIDTH(ADDR_WIDTH),
+        .DATA_WIDTH(DATA_WIDTH),
+        .MEM_SIZE(MEM_SIZE)
+    ) dut (
+        .clk(clk),
+        .reset_n(reset_n),
+        .chip_enable_n(chip_enable_n),
+        .write_enable_n(write_enable_n),
+        .read_enable_n(read_enable_n),
+        .address(address),
+        .data_in(data_in),
+        .data_out(data_out)
+    );
+
+    // Clock generation
+    initial begin
+        clk = 0;
+        forever #(CLK_PERIOD/2) clk = ~clk;
+    end
+
+    // VCD generation
+    initial begin
+        $dumpfile("dump.vcd");
+        $dumpvars(0, sram_tb);
+    end
+
+    // Transaction class for randomization
+    class Transaction;
+        rand logic [ADDR_WIDTH-1:0] addr;
+        rand logic [DATA_WIDTH-1:0] data;
+        // Constraints to stay within boundaries
+        constraint addr_range { addr inside {[0:255]}; }
+        constraint data_range { data inside {[8'h00:8'hFF]}; }
+    endclass
+
+    // Queue to store write transactions for read verification
+    Transaction write_trans[$];
+    Transaction trans;
+
+    // Test stimulus
+    initial begin
+        // Initialize signals
+        reset_n = 1;
+        chip_enable_n = 1;
+        write_enable_n = 1;
+        read_enable_n = 1;
+        address = 0;
+        data_in = 0;
+
+        // Test Case 1: Reset to IDLE state
+        $display("Test Case 1: Reset to IDLE state");
+        reset_n = 0;
+        repeat(2) @(posedge clk);
+        reset_n = 1;
+        @(posedge clk);
+        assert(dut.current_state == 3'b001) else $error("Reset failed: Not in IDLE state");
+
+        // Test Case 2: Write to minimum address with minimum data
+        $display("Test Case 2: Write to minimum address (8'h00) with data 8'h00");
+        chip_enable_n = 0;
+        write_enable_n = 0;
+        read_enable_n = 1;
+        address = 8'h00;
+        data_in = 8'h00;
+        @(posedge clk);
+        @(posedge clk);
+        chip_enable_n = 1;
+        write_enable_n = 1;
+        @(posedge clk);
+        assert(dut.mem[8'h00] == 8'h00) else $error("Write failed at address 8'h00");
+        assert(dut.current_state == 3'b001) else $error("Did not return to IDLE after write");
+
+        // Test Case 3: Read from minimum address
+        $display("Test Case 3: Read from minimum address (8'h00)");
+        chip_enable_n = 0;
+        write_enable_n = 1;
+        read_enable_n = 0;
+        address = 8'h00;
+        @(posedge clk);
+        @(posedge clk);
+        assert(data_out == 8'h00) else $error("Read failed at address 8'h00");
+        chip_enable_n = 1;
+        read_enable_n = 1;
+        @(posedge clk);
+        assert(dut.current_state == 3'b001) else $error("Did not return to IDLE after read");
+
+        // Test Case 4: Write to maximum address with maximum data
+        $display("Test Case 4: Write to maximum address (8'hFF) with data 8'hFF");
+        chip_enable_n = 0;
+        write_enable_n = 0;
+        read_enable_n = 1;
+        address = 8'hFF;
+        data_in = 8'hFF;
+        @(posedge clk);
+        @(posedge clk);
+        chip_enable_n = 1;
+        write_enable_n = 1;
+        @(posedge clk);
+        assert(dut.mem[8'hFF] == 8'hFF) else $error("Write failed at address 8'hFF");
+
+        // Test Case 5: Read from maximum address
+        $display("Test Case 5: Read from maximum address (8'hFF)");
+        chip_enable_n = 0;
+        write_enable_n = 1;
+        read_enable_n = 0;
+        address = 8'hFF;
+        @(posedge clk);
+        @(posedge clk);
+        assert(data_out == 8'hFF) else $error("Read failed at address 8'hFF");
+        chip_enable_n = 1;
+        read_enable_n = 1;
+        @(posedge clk);
+
+        // Test Case 6: Write to random addresses and read them
+        $display("Test Case 6: Write to random addresses and read them");
+        trans = new();
+        repeat (5) begin
+            assert(trans.randomize()) else $error("Randomization failed");
+            chip_enable_n = 0;
+            write_enable_n = 0;
+            read_enable_n = 1;
+            address = trans.addr;
+            data_in = trans.data;
+            $display("Writing data %h to address %h", data_in, address);
+            write_trans.push_back(trans); // Store transaction
+            @(posedge clk);
+            @(posedge clk);
+            chip_enable_n = 1;
+            write_enable_n = 1;
+            @(posedge clk);
+            assert(dut.mem[trans.addr] == trans.data) else $error("Write failed at address %h", trans.addr);
+            trans = new(); // Create new transaction for next iteration
+        end
+        // Read from stored addresses
+        foreach (write_trans[i]) begin
+            chip_enable_n = 0;
+            write_enable_n = 1;
+            read_enable_n = 0;
+            address = write_trans[i].addr;
+            @(posedge clk);
+            @(posedge clk);
+            assert(data_out == write_trans[i].data) else $error("Read failed at address %h, expected %h, got %h", 
+                                                               write_trans[i].addr, write_trans[i].data, data_out);
+            chip_enable_n = 1;
+            read_enable_n = 1;
+            @(posedge clk);
+        end
+
+        // Test Case 7: Write with invalid address
+        $display("Test Case 7: Write with invalid address (8'h100)");
+        chip_enable_n = 0;
+        write_enable_n = 0;
+        read_enable_n = 1;
+        address = 8'h100;
+        data_in = 8'hAA;
+        @(posedge clk);
+        @(posedge clk);
+        assert(dut.mem[0] != 8'hAA) else $error("Write occurred with invalid address");
+        chip_enable_n = 1;
+        write_enable_n = 1;
+        @(posedge clk);
+
+        // Test Case 8: Read with invalid address
+        $display("Test Case 8: Read with invalid address (8'h100)");
+        chip_enable_n = 0;
+        write_enable_n = 1;
+        read_enable_n = 0;
+        address = 8'h100;
+        @(posedge clk);
+        @(posedge clk);
+        assert(data_out == 8'h00) else $error("Read occurred with invalid address");
+        chip_enable_n = 1;
+        read_enable_n = 1;
+        @(posedge clk);
+
+        // Test Case 9: Chip disabled (IDLE state)
+        $display("Test Case 9: Chip disabled (IDLE state)");
+        chip_enable_n = 1;
+        write_enable_n = 0;
+        read_enable_n = 1;
+        address = 8'h10;
+        data_in = 8'hBB;
+        @(posedge clk);
+        @(posedge clk);
+        assert(dut.current_state == 3'b001) else $error("Not in IDLE state when chip disabled");
+        assert(dut.mem[8'h10] != 8'hBB) else $error("Write occurred when chip disabled");
+        chip_enable_n = 1;
+        write_enable_n = 1;
+        @(posedge clk);
+
+        // Test Case 10: Reset during write operation
+        $display("Test Case 10: Reset during write operation");
+        chip_enable_n = 0;
+        write_enable_n = 0;
+        read_enable_n = 1;
+        address = 8'h40;
+        data_in = 8'h11;
+        @(posedge clk);
+        reset_n = 0;
+        @(posedge clk);
+        reset_n = 1;
+        @(posedge clk);
+        assert(dut.current_state == 3'b001) else $error("Reset during operation failed");
+
+        // Test Case 11: Simultaneous read and write (invalid case)
+        $display("Test Case 11: Simultaneous read and write");
+        chip_enable_n = 0;
+        write_enable_n = 0;
+        read_enable_n = 0;
+        address = 8'h20;
+        data_in = 8'hCC;
+        @(posedge clk);
+        @(posedge clk);
+        assert(dut.current_state == 3'b001) else $error("Invalid state for simultaneous read/write");
+        chip_enable_n = 1;
+        write_enable_n = 1;
+        read_enable_n = 1;
+        @(posedge clk);
+
+        $display("All tests completed!");
+        $finish;
+    end
+
+    // Assertions for state transitions
+    property write_state_transition;
+        @(posedge clk) disable iff (!reset_n)
+        (chip_enable_n == 0 && write_enable_n == 0 && read_enable_n == 1 && address < MEM_SIZE &&
+         dut.current_state == 3'b001) |=> (dut.current_state == 3'b010);
+    endproperty
+    assert property(write_state_transition) else $error("WRITE state transition failed");
+
+    property read_state_transition;
+        @(posedge clk) disable iff (!reset_n)
+        (chip_enable_n == 0 && write_enable_n == 1 && read_enable_n == 0 && address < MEM_SIZE &&
+         dut.current_state == 3'b001) |=> (dut.current_state == 3'b100);
+    endproperty
+    assert property(read_state_transition) else $error("READ state transition failed");
+
+    property idle_state_on_chip_disable;
+        @(posedge clk) disable iff (!reset_n)
+        (chip_enable_n == 1) |=> (dut.current_state == 3'b001);
+    endproperty
+    assert property(idle_state_on_chip_disable) else $error("IDLE state failed when chip disabled");
+
+    property idle_state_on_reset;
+        @(posedge clk) (!reset_n) |=> (dut.current_state == 3'b001);
+    endproperty
+    assert property(idle_state_on_reset) else $error("IDLE state failed on reset");
+
+endmodule
+
